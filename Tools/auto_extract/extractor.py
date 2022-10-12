@@ -1,11 +1,12 @@
 # Extract all the class definitions from the NMS.exe
 
 from abc import ABC
-import argparse
+import configparser
 import os
 import os.path as op
 import pathlib
 import re
+from signal import SIGTERM
 import struct
 import subprocess
 import time
@@ -23,6 +24,14 @@ NAME_MAPPING = {
     'gcwordcategorytableEnum': 'GcWordCategoryTableEnum',
     'GCHUDEffectRewardData': 'GcHUDEffectRewardData',
 }
+# List of classes to avoid overwriting as the have custom deserialisation
+# methods.
+DONT_OVERRIDE = [
+    'TkGeometryData',
+    'TkMeshData',
+    'TkSceneNodeData',
+    'TkAnimNodeFrameData',
+]
 
 SUMMARY_FILE = op.join(op.dirname(__file__), 'summary.txt')
 
@@ -76,7 +85,7 @@ USING_MAPPING = {
 }
 
 FIELD_TEMPLATE = "        /* {0} */ public {1} {2};"
-ENUM_TEMPLATE = """        // size: {3}
+ENUM_TEMPLATE = """        // size: {3}{5}
         public enum {1}Enum{4} {{
 {2}
         }}
@@ -128,8 +137,7 @@ Details on the format of the 0x60 bytes for each field:
     table of:
         (uint64): enum index
         (uint64*): pointer to name of enum value.
-      (if 0x1C == 0x17) pointer to a table with the enum values for the array,
-      and a pointer to the type after.
+      (if 0x1C == 0x17) pointer to a table with the enum values for the array
 0x40: (if 0x1C == 0x09): enum count.
 0x44: (float) 1.0 (always?)
 0x48: ??? (seems to always be (uint32) 3 or 4) Can't see why it's which or what
@@ -212,7 +220,10 @@ class Field(ABC):
         """
         raw_type = struct.unpack_from('<I', data, offset=0x1C)[0]
         if raw_type == 0x09 or raw_type == 0x0B:
-            return EnumField(data, nms_mem)
+            ef = EnumField(data, nms_mem)
+            if raw_type == 0x0B:
+                ef.is_flag = True
+            return ef
         elif raw_type == 0x06:
             return ListField(data, nms_mem)
         elif raw_type == 0x17:
@@ -362,6 +373,7 @@ class EnumField(Field):
     def __init__(self, data: bytes, nms_mem: pymem.Pymem):
         super().__init__(data, nms_mem)
         self.is_enum = True
+        self.is_flag = False
         self.raw_field_type = 0x09
         self.requires_values = False
 
@@ -401,12 +413,16 @@ class EnumField(Field):
         enum_type = ''
         if self.requires_values:
             enum_type = ' : uint'
+        flags_string = ''
+        if self.is_flag:
+            flags_string = '\n        [Flags]'
         return ENUM_TEMPLATE.format(
             self.field_offset,
             self.field_name,
             enum_vals,
             fmt_hex(len(self.enum_data)),
             enum_type,
+            flags_string,
         )
 
 
@@ -556,18 +572,17 @@ def find_classes(nms_path: pathlib.Path):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(
-        description='Run NMS.exe and extract all the class definitions'
-    )
-    parser.add_argument(
-        '--nms_path',
-        type=pathlib.Path,
-        default='C://GOG Games//No Man\'s Sky//Binaries//NMS.exe'
-    )
+    # First, handle the configuration loading.
+    config = configparser.ConfigParser()
+    config_path = op.join(op.dirname(__file__), 'extract.cfg')
+    if not op.exists(config_path):
+        raise FileNotFoundError('extract.cfg not found in same directory as '
+                                'this script.')
+    config.read(config_path)
+    binary_path = config['NMS']['binary_path']
 
-    args = parser.parse_args()
-
-    nms_proc = subprocess.Popen(args.nms_path)
+    nms_proc = subprocess.Popen(binary_path)
+    print(f'Opened NMS with PID: {nms_proc.pid}')
     filepaths = []
     with open('./libMBIN-Shared.projitems.j2', 'r') as f:
         template = Template(f.read())
@@ -582,7 +597,7 @@ if __name__ == '__main__':
         nms_base = nms.base_address
         t1 = time.time()
         names = []
-        for name, offset in find_classes(args.nms_path):
+        for name, offset in find_classes(binary_path):
             read_class(nms, nms_base + offset, filepaths)
             if name[1:] in NAME_MAPPING:
                 name = 'c' + NAME_MAPPING[name[1:]]
@@ -594,8 +609,12 @@ if __name__ == '__main__':
         with open('./libMBIN-Shared.projitems', 'w') as f:
             f.write(template.render(filepaths=filepaths))
         print(f'Took {time.time() - t1}s')
-        # Kill the NMS process.
     except Exception as exc:
         raise exc
     finally:
-        nms_proc.terminate()
+        # Kill the NMS process.
+        if config['general'].getboolean('close_NMS_process', fallback=True):
+            nms_proc.terminate()
+            nms_pid = nms.process_id
+            if nms_pid != nms_proc.pid:
+                os.kill(nms_pid, SIGTERM)

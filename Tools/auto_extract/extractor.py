@@ -2,7 +2,6 @@
 
 from abc import ABC
 import configparser
-from multiprocessing.dummy import Array
 import os
 import os.path as op
 import pathlib
@@ -25,6 +24,16 @@ NAME_MAPPING = {
     'GcDefaulMissionSubstance': 'GcDefaultMissionSubstance',
     'gcwordcategorytableEnum': 'GcWordCategoryTableEnum',
     'GCHUDEffectRewardData': 'GcHUDEffectRewardData',
+}
+# Flag enums fixes
+FLAG_ENUM_FIXES = {
+    'false_positives': [],
+    'false_negatives': [
+        'HotspotType',
+        'CollisionGroup',
+        'MetadataReadMask',
+        'InputActionInfoFlags',
+    ],
 }
 # List of classes to avoid overwriting as the have custom deserialisation
 # methods.
@@ -222,6 +231,7 @@ class Field(ABC):
             ef = EnumField(data, nms_mem)
             if raw_type == 0x0B:
                 ef.is_flag = True
+            ef.check_flag_overwrites()
             return ef
         elif raw_type == 0x06:
             return ListField(data, nms_mem)
@@ -407,6 +417,13 @@ class EnumField(Field):
         if [x[0] for x in self.enum_data] != list(range(enum_count)):
             self.requires_values = True
 
+    def check_flag_overwrites(self):
+        # Check our overwrites and modify the `is_flag` property appropriately.
+        if self.field_name in FLAG_ENUM_FIXES['false_negatives']:
+            self.is_flag = True
+        elif self.field_name in FLAG_ENUM_FIXES['false_positives']:
+            self.is_flag = False
+
     @property
     def is_flag(self) -> bool:
         return self._is_flag
@@ -416,6 +433,9 @@ class EnumField(Field):
         self._is_flag = value
         if value is True:
             self.required_using.add('System')
+        elif value is False:
+            # Remove the System using requirement.
+            self.required_using -= {'System', }
 
     def __str__(self):
         if self.requires_values:

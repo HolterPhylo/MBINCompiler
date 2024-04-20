@@ -2,16 +2,16 @@
 // They will always be disabled/ignored in Release builds.
 
 // Uncomment to enable debug logging of the template de/serialization.
-//#define DEBUG_TEMPLATE
+// #define DEBUG_TEMPLATE
 
 // Uncomment to enable debug logging of XML comments
-//#define DEBUG_COMMENTS
+// #define DEBUG_COMMENTS
 
 // Uncomment to enable debug logging of MBIN field names
-//#define DEBUG_FIELD_NAMES
+// #define DEBUG_FIELD_NAMES
 
 // Uncomment to enable debug logging of XML property names
-//#define DEBUG_PROPERTY_NAMES
+// #define DEBUG_PROPERTY_NAMES
 
 
 using System;
@@ -314,13 +314,19 @@ namespace libMBIN
                     if (type.BaseType == typeof(NMSTemplate)) {
                         alignment = 1;
 
-                        foreach (FieldInfo field in type.GetFields()) {
-                            int align = AlignOf(field.FieldType);
-                            if (align > alignment) {
-                                alignment = align;
-                                if (alignment >= 0x10) break;
-                            }
+                        // Since fields are ordered by alignment, the first element will
+                        // have the largest alignment.
+                        FieldInfo[] fields = type.GetFields();
+                        if (fields.Length > 0) {
+                            alignment = AlignOf(fields[0].FieldType);
                         }
+                        // foreach (FieldInfo field in type.GetFields()) {
+                        //     int align = AlignOf(field.FieldType);
+                        //     if (align > alignment) {
+                        //         alignment = align;
+                        //         if (alignment >= 0x10) break;
+                        //     }
+                        // }
 
                         break;
                     }

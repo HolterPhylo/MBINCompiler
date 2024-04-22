@@ -463,7 +463,7 @@ namespace libMBIN
             if (obj == null) return null;
 
             long templatePosition = reader.BaseStream.Position;
-            DebugLogTemplate($"{templateName}\t0x{templatePosition:X4}");
+            DebugLogTemplate($"{templateName}\t0x{templatePosition - 0x60:X4}");
             using ( var indentScope = new Logger.IndentScope() ) {
 
                 if ( templateName == "VariableSizeString" ) {
@@ -485,14 +485,14 @@ namespace libMBIN
                     } else {
                         field.SetValue( obj, DeserializeValue( reader, field.FieldType, settings, templatePosition, field, obj ) );
                     }
-                    DebugLogFieldName( $"{templateName}\t0x{reader.BaseStream.Position:X4}\t{field.Name}\t{field.GetValue( obj )}" );
+                    DebugLogFieldName( $"{templateName}\t0x{reader.BaseStream.Position - 0x60:X4}\t{field.Name}\t{field.GetValue( obj )}" );
                 }
                 reader.Align( AlignOf(type) ); // This is to remove the need for end padding
                 
                 obj.FinishDeserialize();
 
             }
-            DebugLogTemplate($"{templateName}\t0x{reader.BaseStream.Position:X4}");
+            DebugLogTemplate($"{templateName}\t0x{reader.BaseStream.Position - 0x60:X4}");
 
             return obj;
         }
@@ -783,7 +783,7 @@ namespace libMBIN
             writer.Align( 0x8, list.GetType().Name );       // Make sure that all c~ names are offset at 0x8.     // make rel to listHeaderPosition?
             long listPosition = writer.BaseStream.Position;
 
-            DebugLogTemplate( $"SerializeList\tstart:\t{$"0x{listPosition:X},",-10}\theader:\t{$"0x{listHeaderPosition:X},",-10}\tcount:\t{list.Count}");
+            DebugLogTemplate( $"SerializeList\tstart:\t{$"0x{listPosition - 0x60:X},",-10}\theader:\t{$"0x{listHeaderPosition - 0x60:X},",-10}\tcount:\t{list.Count}");
 
             writer.BaseStream.Position = listHeaderPosition;
 
@@ -909,7 +909,7 @@ namespace libMBIN
             int addtDataIndexThis = addtDataIndex;
 
             foreach ( var entry in list ) {
-                DebugLogTemplate( $"[C] writing {entry.GetType().Name} to offset 0x{writer.BaseStream.Position:X}" );
+                DebugLogTemplate( $"[C] writing {entry.GetType().Name} to offset 0x{writer.BaseStream.Position - 0x60:X}" );
                 SerializeValue( writer, entry.GetType(), entry, null, null, ref additionalData, ref addtDataIndexThis, listEnding );
             }
         }
